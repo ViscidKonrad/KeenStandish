@@ -1,0 +1,513 @@
+<HTML>
+<HEAD>
+<TITLE>Test of "Keen Equilibrium"</TITLE>
+<SCRIPT type="text/javascript" src="http://simjs.com/_downloads/random-0.26.js"></SCRIPT>
+<SCRIPT type="text/javascript" src="https://www.google.com/jsapi"></SCRIPT>
+<SCRIPT type="text/javascript">
+
+  google.load("visualization","1",{packages:["corechart"]});
+
+  var stream = new Random();
+
+  function Simulation() {
+
+    var alpha = 11;
+    var beta = 1/3;
+    var n;
+    var delta;
+    var mc;
+    var deltaSum;
+    var mcSum;
+    var mcDeltaDum;
+
+    this.setCharacteristics = function() {
+
+      // Simulation characteristics
+      n = parseInt(document.simControls.nFirms.value);
+      delta = new Array(n+1);
+      mc = new Array(n+1);
+      deltaSum = 0;
+      mcSum = 0;
+
+      // Firm characteristics
+      // Use a dummy "firm" to make indexing more clear
+      delta[0] = 0;
+      mc[0] = 0;
+
+      // Assign deltas and marginal costs to each firm
+      // Include sums
+      if (document.simControls.checkHold[0].checked) {
+//        deltaSum = Math.abs(stream.normal(0,0.002/n));
+	// Holding fixed (for testing purposes)
+        deltaSum = 0.01;
+        deltaSum = 0.001;
+        for (var i=1; i<=n; i++) {
+          delta[i] = deltaSum;
+        }
+        deltaSum*= n;
+      }
+      else {
+        deltaSum = 0;
+        for (var i=1; i<=n; i++) {
+          delta[i] = Math.abs(stream.normal(0,0.002/n));
+          deltaSum+= delta[i];
+        }
+      }
+      if (document.simControls.checkHold[1].checked) {
+//        mcSum = 0.5+stream.random();
+	// Holding fixed (for testing purposes)
+        mcSum = 1;
+        for (var i=1; i<=n; i++) {
+	  // Creating a spread (for testing purposes!)
+	  // var f = n-(n%2);
+          // mc[i] = mcSum+(i-1)/(n-1)-1/2;
+          mc[i] = mcSum;
+        }
+        mcSum*= n;
+      }
+      else {
+        mcSum = 0;
+        for (var i=1; i<=n; i++) {
+          mc[i] = 0.5+stream.random();
+          mcSum+= mc[i];
+        }
+      }
+
+    }
+
+    this.sortFirms = function() {
+
+      // Sort as necessary
+      // Note that when sorting by both, lowest marginal-cost firm has largest delta
+      if (document.simControls.checkSort[0].checked) {
+	// Thanks to Russell Standish for finding a bug here!
+        delta.sort(function(a,b){return (a*b==0 ? a-b : b-a)});
+      }
+      if (document.simControls.checkSort[1].checked) {
+        mc.sort(function(a,b){return (a-b)});
+      }
+      mcDeltaSum = 0;
+      for (var i=1; i<=n; i++) {
+        mcDeltaSum+= delta[i]*mc[i];
+      }
+
+    }
+
+    this.runSim = function() {
+
+      var MAX_ITER = parseInt(document.simControls.maxIters.value);
+      var HALF_ITER_1 = parseInt(document.simControls.halfIters.value);
+      var HALF_ITER_2 = parseInt(document.simControls.halfIters2.value);
+      var HALF_ITER_3 = parseInt(document.simControls.halfIters3.value);
+      var STEP_FIRM_1 = parseInt(document.simControls.stepFirm.value);
+      var STEP_FIRM_2 = parseInt(document.simControls.stepFirm2.value);
+      var STEP_FIRM_3 = parseInt(document.simControls.stepFirm3.value);
+      var RESTEP_1 = parseInt(document.simControls.stepType.value);
+      var RESTEP_2 = parseInt(document.simControls.stepType2.value);
+      var RESTEP_3 = parseInt(document.simControls.stepType3.value);
+      var ALLBUT_1 = parseInt(document.simControls.allBut.value);
+      var ALLBUT_2 = parseInt(document.simControls.allBut2.value);
+      var ALLBUT_3 = parseInt(document.simControls.allBut3.value);
+      var INITIAL_STEP = parseInt(document.simControls.initialStep.value);
+
+      var QM = (alpha-mcDeltaSum/deltaSum)/(2*beta);
+      var qC = (alpha-mcSum/n)/((n+1)*beta);
+      var initKS = document.simControls.setInit[1].checked;
+      var PLOT_STEP = Math.max(1,Math.floor(MAX_ITER/1000));
+
+      // Initialize the market
+      var q = new google.visualization.DataTable();
+      var Q = new google.visualization.DataTable();
+      var P = new google.visualization.DataTable();
+      var pi = new google.visualization.DataTable();
+      var s = new google.visualization.DataTable();
+      var d = new google.visualization.DataTable();
+      var stepKS = new Array(n+1);
+      var iterQPrev2 = [1];
+      var iterQPrev1 = [2];
+      var iterQPrev = 0;
+      var iterQ = 0;
+      var iterPiPrev2 = [1];
+      var iterPiPrev1 = [2];
+      var iterPi = 0;
+      var iterS = [1];
+      var p = 0;
+
+      q.addColumn('number', 'Iteration');
+      Q.addColumn('number', 'Iteration');
+      Q.addColumn('number', 'Quantity Supplied');
+      P.addColumn('number', 'Iteration');
+      P.addColumn('number', 'Price');
+      pi.addColumn('number', 'Iteration');
+      s.addColumn('number', 'Iteration');
+      d.addColumn('number', 'Iteration');
+      for (var i=1; i<=n; i++) {
+        stepKS[i] = INITIAL_STEP;
+        q.addColumn('number','Firm '+i);
+        pi.addColumn('number','Firm '+i);
+        s.addColumn('number','Firm '+i);
+        d.addColumn('number','Firm '+i);
+        if (initKS) {
+	  // KS equilibrium
+          iterQPrev2[i] = (delta[i]/deltaSum)*(QM-(mc[i]-mcDeltaSum/deltaSum)/(beta));
+	  // Overriding for testing purposes
+	  // iterQPrev2[i] = delta[i]*(Math.floor((alpha-1/2)/(4*beta*delta[i]))+10);
+        }
+        else {
+          // Cournot-Nash with variable MC
+          iterQPrev2[i] = qC-(mc[i]-mcSum/n)/beta;
+        }
+        iterQ+= iterQPrev2[i];
+      }
+      p = alpha-beta*iterQ;
+      for (var i=1; i<=n; i++) {
+        iterPiPrev2[i] = (p-mc[i])*iterQPrev2[i];
+        iterS[i] = iterQPrev2[i]/iterQ-1/n;
+      }
+      q.addRow(iterQPrev2);
+      Q.addRow([1,iterQ]);
+      P.addRow([1,p]);
+      pi.addRow(iterPiPrev2);
+      s.addRow(iterS);
+      delta[0] = 1;
+      d.addRow(delta);
+
+      iterS = [2];
+      iterQPrev = iterQ;
+      iterQ = 0;
+      for (var i=1; i<=n; i++) {
+        iterQPrev1[i] = iterQPrev2[i]+(stream.random()<0.5 ? -1 : 1)*delta[i];
+ 	// Overriding for testing purposes
+	iterQPrev1[i] = iterQPrev2[i]+(i==n ? 1 : -1)*delta[i];
+        iterQ+= iterQPrev1[i];
+      }
+      p = alpha-beta*iterQ;
+      for (var i=1; i<=n; i++) {
+        iterPiPrev1[i] = (p-mc[i])*iterQPrev1[i];
+        iterS[i] = iterQPrev1[i]/iterQ-1/n;
+      }
+      q.addRow(iterQPrev1);
+      Q.addRow([2,iterQ]);
+      P.addRow([2,p]);
+      pi.addRow(iterPiPrev1);
+      s.addRow(iterS);
+      delta[0] = 2;
+      d.addRow(delta);
+
+      var sIter = (document.simControls.doHalfIters[0].checked ? HALF_ITER_1 : (document.simControls.doHalfIters[1].checked ? HALF_ITER_2 : MAX_ITER));
+      var dprop;
+      for (var j=3; j<=MAX_ITER; j++) {
+
+/*
+	if (updateDelta && iterQ!=iterQPrev) {
+          deltaSum = 0;
+          mcDeltaSum = 0;
+          for (var i=1; i<=n; i++) {
+            if (iterQ-iterQPrev != Math.abs(iterQPrev1[i]-iterQPrev[2])) {
+              dprop = Math.abs((iterQ-iterQPrev)-(iterQPrev1[i]-iterQPrev2[i]))/2;
+              delta[i]*= (dprop>delta[i] ? 1.1 : 1/1.1);
+            }
+            deltaSum+= delta[i];
+            mcDeltaSum+= delta[i]*mc[i];
+          }
+          QM = (alpha-mcDeltaSum/deltaSum)/(2*beta);
+          qC = (alpha-mcSum/n)/((n+1)*beta);
+        }
+*/
+
+	if (j==HALF_ITER_1+1) {
+          if (document.simControls.doHalfIters[0].checked) {
+            if (ALLBUT_1) {
+              for (var i=1; i<=n; i++) {
+                if (i!=STEP_FIRM_1) {
+                  stepKS[i]=RESTEP_1;
+                }
+              }
+            }
+            else {
+              stepKS[STEP_FIRM_1]=RESTEP_1;
+            }
+//	    alert(stepKS);
+          }
+        }
+	if (j==HALF_ITER_2+1) {
+          if (document.simControls.doHalfIters[1].checked) {
+            if (ALLBUT_2) {
+              for (var i=1; i<=n; i++) {
+                if (i!=STEP_FIRM_2) {
+                  stepKS[i]=RESTEP_2;
+                }
+              }
+            }
+            else {
+              stepKS[STEP_FIRM_2]=RESTEP_2;
+            }
+//            alert(stepKS);
+          }
+        }
+	if (j==HALF_ITER_3+1) {
+          if (document.simControls.doHalfIters[2].checked) {
+            if (ALLBUT_3) {
+              for (var i=1; i<=n; i++) {
+                if (i!=STEP_FIRM_3) {
+                  stepKS[i]=RESTEP_3;
+                }
+              }
+            }
+            else {
+              stepKS[STEP_FIRM_3]=RESTEP_3;
+            }
+//            alert(stepKS);
+          }
+        }
+
+        var iterQCur = [j];
+        var iterPiCur = [j];
+        iterQPrev = iterQ;
+        iterQ = 0;
+        for (var i=1; i<=n; i++) {
+          if (stepKS[i]==0) {
+	    // Play KS
+            iterQCur[i] = iterQPrev1[i]+(iterPiPrev1[i]<=iterPiPrev2[i] ? -1 : 1)*(iterQPrev1[i]<iterQPrev2[i] ? -1 : 1)*delta[i];
+          }
+          else if (stepKS[i]==1) {
+            // Step toward best response to previous iteration
+            iterQCur[i] = iterQPrev1[i]+(p-mc[i]>=beta*iterQPrev1[i] ? 1 : -1)*delta[i];
+          }
+          else if (stepKS[i]==2) {
+            // Play Cournot-Nash
+            iterQCur[i]=qC-(mc[i]-mcSum/n)/beta;
+          }
+          else {
+            // Play Stackelberg
+            iterQCur[i]=(alpha-mcDeltaSum/deltaSum)/(2*beta)-((deltaSum-delta[i]/2)/(deltaSum-delta[i]))*(mc[i]-mcDeltaSum/deltaSum)/beta
+          }
+          iterQ+= iterQCur[i];
+        }
+        p = alpha-beta*iterQ;
+        for (var i=1; i<=n; i++) {
+          iterPiCur[i] = (p-mc[i])*iterQCur[i];
+        }
+        if (j%PLOT_STEP==0) {
+          iterS = [j];
+          for (var i=1; i<=n; i++) {
+            iterS[i] = iterQCur[i]/iterQ-1/n;
+          }
+          q.addRow(iterQCur);
+          Q.addRow([j, iterQ]);
+          P.addRow([j, p]);
+          pi.addRow(iterPiCur);
+          s.addRow(iterS);
+          delta[0] = j;
+          d.addRow(delta);
+        }
+
+        iterQPrev2 = iterQPrev1;
+        iterQPrev1 = iterQCur;
+        iterPiPrev2 = iterPiPrev1;
+        iterPiPrev1 = iterPiCur;
+
+        if (j==sIter) {
+          document.getElementById('text_span').innerHTML = 'Market Shares at Iteration '+j;
+          var sf = new google.visualization.DataTable();
+          var sOptions;
+          var sfs;
+          if (INITIAL_STEP==1 || document.simControls.checkHold[0].checked) {
+            // Cournot-ish or constant delta
+            sOptions = {hAxis: {title: 'Excess Marginal Cost'}, vAxis: {title: 'Excess Market Share'},
+    	      series: { 1: {lineWidth: 0, pointSize: 10}}};
+            sf.addColumn('number', 'Excess MC');
+            if (INITIAL_STEP==1) {
+              sf.addColumn('number', 'Theoretical Cournot Excess Share');
+            }
+            else {
+              sf.addColumn('number', 'Theoretical KS Excess Share');
+            }
+            sf.addColumn('number', 'Actual Excess Share');
+            if (INITIAL_STEP) {
+              // Cournot-ish
+              for (var i=1; i<=n; i++) {
+                sf.addRow([mc[i]-mcSum/n,-(n+1)*(mc[i]-mcSum/n)/(alpha-mcSum/n)/n,iterQCur[i]/iterQ-1/n]);
+              }
+            }
+            else {
+              // Equal-delta KS
+              for (var i=1; i<=n; i++) {
+                sf.addRow([mc[i]-mcSum/n,-2*(mc[i]-mcSum/n)/(alpha-mcSum/n)/n,iterQCur[i]/iterQ-1/n]);
+              }
+            }
+          }
+          else {
+            if (document.simControls.checkHold[1].checked) {
+              // Equal-MC KS
+              sOptions = {hAxis: {title: 'Delta'}, vAxis: {title: 'Market Share'},
+                series: { 1: {lineWidth: 0, pointSize: 10}}};
+              sf.addColumn('number', 'Delta');
+              sf.addColumn('number', 'Theoretical KS Share');
+              sf.addColumn('number', 'Actual Share');
+              sf.addRow([0,0,null]);
+              for (var i=1; i<=n; i++) {
+                sf.addRow([delta[i],delta[i]/deltaSum,iterQCur[i]/iterQ]);
+              }
+            }
+            else {
+              // Full KS
+              sOptions = {hAxis: {title: 'Predicted Market Share'}, vAxis: {title: 'Actual Market Share'},
+                series: { 1: {lineWidth: 0, pointSize: 10}}};
+              sf.addColumn('number', 'Predicted KS Market Share');
+              sf.addColumn('number', 'Predicted KS Share');
+              sf.addColumn('number', 'Actual Share');
+              sf.addRow([0,0,null]);
+              var x;
+              for (var i=1; i<=n; i++) {
+                x = (delta[i]/deltaSum)*(1-(mc[i]-mcDeltaSum/deltaSum)/(beta*QM));
+                sf.addRow([x,x,iterQCur[i]/iterQ]);
+              }
+            }
+          }
+        }
+      }
+
+      var sChart = new google.visualization.ComboChart(document.getElementById('s_div'));
+      sChart.draw(sf,sOptions);
+
+      var dChart = new google.visualization.LineChart(document.getElementById('d_div'));
+      var dOptions = {hAxis: {title: 'Iteration'}, vAxis: {title: 'Delta'}};
+      dChart.draw(d,dOptions);
+
+      var qChart = new google.visualization.LineChart(document.getElementById('q_div'));
+      var qOptions = {hAxis: {title: 'Iteration'}, vAxis: {title: 'Output'}};
+      qChart.draw(q,qOptions);
+
+      var piChart = new google.visualization.LineChart(document.getElementById('pi_div'));
+      var piOptions = {hAxis: {title: 'Iteration'}, vAxis: {title: 'Profits'}};
+      piChart.draw(pi,piOptions);
+
+    }
+
+  }
+
+  function doSim() {
+
+    var sim = new Simulation();
+    sim.setCharacteristics();
+    sim.sortFirms();
+    sim.runSim();
+
+  }
+
+  google.setOnLoadCallback(doSim);
+
+
+</SCRIPT>
+</HEAD>
+<BODY>
+This webpage simulates "Keen" oligopolistic competition under linear demand and constant (but possibly firm-dependent) marginal costs.<br><br>
+  <FORM name="simControls" action="" method="get">
+    <TABLE>
+      <TR>
+        <TD colspan="3"><b>Initialization Options</b>
+        </TD>
+      </TR>
+      <TR>
+        <TD>
+          <INPUT type="text" name="nFirms" value="5" maxlength="3" size="3">firms in oligopoly.
+        </TD>
+        <TD>Sort firms by: <br>
+          <INPUT type="checkbox" name="checkSort" value="delta" checked>Delta<br>
+          <INPUT type="checkbox" name="checkSort" value="mc">Marginal cost<br>
+        </TD>
+        <TD>Initialize outputs at: <br>
+          <INPUT type="radio" name="setInit" value="Cournot">Cournot-Nash<br>
+          <INPUT type="radio" name="setInit" value="KS" checked>Keen-Standish<br>
+        </TD>
+      </TR>
+      <TR>
+        <TD>
+          Perform <INPUT type="text" name="maxIters" value="1000000" maxlength="7" size="7"> iterations.
+        </TD>
+        <TD>Hold constant across firms: <br>
+          <INPUT type="checkbox" name="checkHold" value="delta">Delta<br>
+          <INPUT type="checkbox" name="checkHold" value="mc">Marginal cost<br>
+        </TD>
+        <TD>Firms initially play
+	  <SELECT id="initialStep">
+            <OPTION value="0">Keen-Standish</OPTION>
+            <OPTION value="1" selected="selected">Cournot-ish</OPTION>
+            <OPTION value="2">Cournot-Nash</OPTION>
+          </SELECT>
+        </TD>
+      </TR>
+      <TR>
+        <TD colspan="3"><b>Mid-simulation Options</b>
+        </TD>
+      </TR>
+      <TR>
+        <TD colspan="3">
+          <INPUT type="checkbox" name="doHalfIters">At iteration
+          <INPUT type="text" name="halfIters" value="100000" maxlength="6" size="6">
+          <SELECT id="allBut">
+            <OPTION value="0" selected="selected">firm</OPTION>
+            <OPTION value="1">all firms but</OPTION>
+          </SELECT>
+          <INPUT type="text" name="stepFirm" value="5" maxlength="3" size="3"> starts playing
+	  <SELECT id="stepType">
+            <OPTION value="0">Keen-Standish</OPTION>
+            <OPTION value="1" selected="selected">Cournot-ish</OPTION>
+            <OPTION value="2">Cournot-Nash</OPTION>
+            <OPTION value="3">"Stackelberg"</OPTION>
+          </SELECT>
+        </TD>
+      </TR>
+      <TR>
+        <TD colspan="3">
+          <INPUT type="checkbox" name="doHalfIters">At iteration
+          <INPUT type="text" name="halfIters2" value="700000" maxlength="6" size="6">
+          <SELECT id="allBut2">
+            <OPTION value="0" selected="selected">firm</OPTION>
+            <OPTION value="1">all firms but</OPTION>
+          </SELECT>
+          <INPUT type="text" name="stepFirm2" value="5" maxlength="3" size="3"> starts playing
+	  <SELECT id="stepType2">
+            <OPTION value="0">Keen-Standish</OPTION>
+            <OPTION value="1">Cournot-ish</OPTION>
+            <OPTION value="2">Cournot-Nash</OPTION>
+            <OPTION value="3" selected="selected">"Stackelberg"</OPTION>
+          </SELECT>
+        </TD>
+      </TR>
+      <TR>
+        <TD colspan="3">
+          <INPUT type="checkbox" name="doHalfIters">At iteration
+          <INPUT type="text" name="halfIters3" value="700000" maxlength="6" size="6">
+          <SELECT id="allBut3">
+            <OPTION value="0" selected="selected">firm</OPTION>
+            <OPTION value="1">all firms but</OPTION>
+          </SELECT>
+          <INPUT type="text" name="stepFirm3" value="5" maxlength="3" size="3"> starts playing
+	  <SELECT id="stepType3">
+            <OPTION value="0">Keen-Standish</OPTION>
+            <OPTION value="1">Cournot-ish</OPTION>
+            <OPTION value="2">Cournot-Nash</OPTION>
+            <OPTION value="3" selected="selected">"Stackelberg"</OPTION>
+          </SELECT>
+        </TD>
+      </TR>
+      <TR>
+       <TR>
+      </TR>
+      <TR>
+        <TD>
+          <INPUT type="button" name="button" Value="Run" onClick="doSim();">
+        </TD>
+      </TR>
+    </TABLE>
+  </FORM>
+  <SPAN id="text_span"></SPAN>
+  <DIV id="s_div" style="width: 900px; height: 500px;"></div>
+  <DIV id="pi_div" style="width: 900px; height: 500px;"></div>
+  <DIV id="q_div" style="width: 900px; height: 500px;"></div>
+  <DIV id="d_div" style="width: 900px; height: 500px;"></div>
+</BODY>
+</HTML>
+
